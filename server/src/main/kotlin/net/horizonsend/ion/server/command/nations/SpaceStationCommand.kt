@@ -106,7 +106,7 @@ object SpaceStationCommand : net.horizonsend.ion.server.command.SLCommand() {
 
 		// Check conflict with stars
 		for (star: CachedStar in Space.getStars().filter { it.spaceWorld == world }) {
-			val minDistance = 256
+			val minDistance = 256 + radius
 			val distance = distance(x, y, z, star.location.x, y, star.location.z)
 
 			failIf(distance < minDistance) {
@@ -117,7 +117,7 @@ object SpaceStationCommand : net.horizonsend.ion.server.command.SLCommand() {
 		// Check conflict with beacons
 		HyperspaceBeaconManager.beaconWorlds[world]?.let { beacons ->
 			for (beacon in beacons) {
-				val minDistance = 3000
+				val minDistance = 3000 + radius
 				val distance = distance(x, y, z, beacon.spaceLocation.x, y, beacon.spaceLocation.z)
 
 				failIf(distance < minDistance) {
@@ -146,7 +146,7 @@ object SpaceStationCommand : net.horizonsend.ion.server.command.SLCommand() {
 		// another one in the same location before the cache updates)
 		for (other in EcoStations.getAll()) {
 			if (other.world != world.name) continue
-			val minDistance = 5000
+			val minDistance = 5000 + radius
 			val distance = distance(x, y, z, other.x, y, other.z)
 
 			failIf(distance < minDistance) {
@@ -525,6 +525,46 @@ object SpaceStationCommand : net.horizonsend.ion.server.command.SLCommand() {
 
 		sender.sendMessage(formatSpaceStationMessage("Renamed {0} to {1}", station.name, newName,))
 		Notify.chatAndGlobal(formatSpaceStationMessage("Space station {0}  has been renamed to  {1} by {2}", station.name, newName, sender.name))
+	}
+	
+	@Subcommand("move")
+	@Description("Move the station")
+	@CommandCompletion("@spaceStations")
+	@Suppress("unused")
+	fun onMove(sender: Player, station: CachedSpaceStation<*, *, *>, @Optional cost: Int?) {
+		requireStationOwnership(sender.slPlayerId, station)
+		requirePermission(sender.slPlayerId, station, SpaceStationCache.SpaceStationPermission.MANAGE_STATION)
+		val stationName = station.name
+		val location = sender.location
+		val world = location.world
+		
+		val y = 128
+		
+		val x = station.x
+		val z = station.z
+		val newX = location.blockX
+		val newZ = location.blockZ
+		checkDimensions(world, newX, newZ, station.radius, station)
+
+		val realCost = distance(x, y, z, newX, y, newZ) * station.radius
+		requireMoney(sender, realCost, "move a space station")
+
+		failIf(cost != realCost) {
+			"You must acknowledge the cost of moving a space station to move one. " +
+				"The cost is ${realCost.toCreditsString()}. Run the command: " +
+				"/nstation move ${station.name} $newX $newZ $realCost"
+		}
+
+		station.setLocation(newX, newZ, world)
+
+		VAULT_ECO.withdrawPlayer(sender, realCost.toDouble())
+
+		sender.sendMessage(formatSpaceStationMessage(
+			"Moved {0} to {1},{2}",
+			stationName,
+			newX,
+			newZ
+		))
 	}
 }
 
